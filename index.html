@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR体験</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #11111a;
+    --bg3: #1a1a28;
+    --green: #39ff6e;
+    --green-dim: #1a6630;
+    --purple: #9b6dff;
+    --purple-dim: #3d2a66;
+    --text: #e8e8f0;
+    --text-dim: #7a7a9a;
+    --red: #ff4444;
+    --amber: #ffb347;
+    --border: rgba(155,109,255,0.2);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+  .screen { display: none; min-height: 100vh; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* HOME */
+  #home {
+    padding: 2.5rem 1.5rem;
+    max-width: 520px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .logo { font-size: 11px; letter-spacing: 0.3em; color: var(--text-dim); margin-bottom: 0.4rem; }
+  h1 { font-size: clamp(1.5rem, 5vw, 2.2rem); font-weight: 700; color: var(--green); text-shadow: 0 0 30px rgba(57,255,110,0.3); line-height: 1.2; margin-bottom: 0.5rem; }
+  h1 span { color: var(--purple); }
+  .subtitle { font-size: 12px; color: var(--text-dim); margin-bottom: 2rem; line-height: 1.6; }
+
+  .flow-diagram { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 2rem; }
+  .flow-step { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 11px; text-align: center; flex: 1; min-width: 70px; }
+  .flow-step .num { font-size: 9px; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 2px; }
+  .flow-step.s-reject .label { color: var(--red); }
+  .flow-step.s-hack .label { color: var(--amber); }
+  .flow-step.s-stamp .label { color: var(--green); }
+  .flow-step.s-praise .label { color: var(--purple); }
+  .flow-arrow { color: var(--text-dim); font-size: 14px; flex-shrink: 0; }
+
+  .config-block { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; width: 100%; }
+  .config-label { font-size: 11px; letter-spacing: 0.2em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.75rem; }
+  .name-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; color: var(--text); font-family: 'Courier New', monospace;
+    font-size: 14px; outline: none; margin-bottom: 1rem; transition: border-color 0.2s;
+  }
+  .name-input:focus { border-color: var(--purple); }
+  .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+  #qr-canvas-wrap { background: white; padding: 14px; border-radius: 10px; display: inline-block; }
+  #qr-url { font-size: 10px; color: var(--text-dim); word-break: break-all; text-align: center; max-width: 300px; }
+
+  .note-box { background: var(--bg2); border: 1px solid rgba(57,255,110,0.15); border-radius: 8px; padding: 1rem 1.25rem; font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+  .note-box strong { color: var(--green); }
+
+  /* LOADING */
+  #loading { align-items: center; justify-content: center; padding: 2rem; text-align: center; }
+  .loading-dots { font-size: 2rem; letter-spacing: 0.4em; color: var(--purple); animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+  .loading-label { font-size: 12px; color: var(--text-dim); margin-top: 0.75rem; }
+
+  /* REJECT */
+  #reject { align-items: center; justify-content: center; padding: 2rem; text-align: center; }
+  .reject-box { max-width: 380px; width: 100%; }
+  .reject-icon { font-size: 4rem; margin-bottom: 1rem; display: block; }
+  .reject-title { font-size: 1.6rem; color: var(--red); margin-bottom: 0.75rem; text-shadow: 0 0 20px rgba(255,68,68,0.3); }
+  .reject-msg { color: var(--text-dim); font-size: 13px; line-height: 1.8; margin-bottom: 1.5rem; }
+  .retry-btn {
+    background: transparent; border: 1px solid var(--red); color: var(--red);
+    font-family: 'Courier New', monospace; font-size: 13px; padding: 10px 24px;
+    border-radius: 8px; cursor: pointer; letter-spacing: 0.1em; transition: all 0.2s;
+  }
+  .retry-btn:hover { background: rgba(255,68,68,0.1); }
+  .accepted-title { font-size: 1.5rem; color: var(--green); margin-bottom: 0.75rem; }
+  .blink { animation: blink 1.2s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* HACK */
+  #hack { align-items: center; justify-content: center; padding: 2rem; }
+  .hack-terminal { width: 100%; max-width: 460px; background: #000; border: 1px solid var(--green-dim); border-radius: 8px; overflow: hidden; }
+  .hack-titlebar { background: #1a1a1a; padding: 8px 12px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #666; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .hack-body { padding: 1rem 1.25rem; min-height: 280px; overflow-y: auto; max-height: 65vh; }
+  .hack-line { color: var(--green); line-height: 1.9; font-size: 13px; opacity: 0; white-space: pre-wrap; }
+  .hack-line.show { opacity: 1; }
+  .hack-line.red { color: var(--red); }
+  .hack-line.amber { color: var(--amber); }
+  .hack-line.dim { color: #3a3a3a; }
+  .hack-reveal { margin-top: 1rem; padding: 0.75rem 1rem; background: rgba(57,255,110,0.05); border: 1px solid var(--green-dim); border-radius: 6px; display: none; }
+  .hack-reveal.show { display: block; }
+  .hack-reveal p { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+  .hack-reveal strong { color: var(--green); }
+
+  /* STAMP */
+  #stamp { padding: 2rem 1.5rem; max-width: 440px; margin: 0 auto; width: 100%; align-items: center; justify-content: center; }
+  .stamp-header { text-align: center; margin-bottom: 1.5rem; }
+  .stamp-eyebrow { font-size: 11px; letter-spacing: 0.25em; color: var(--text-dim); margin-bottom: 0.4rem; }
+  .stamp-visitor { font-size: 13px; color: var(--text-dim); margin-bottom: 0.75rem; }
+  .stamp-num { font-size: 4rem; font-weight: 700; color: var(--green); text-shadow: 0 0 40px rgba(57,255,110,0.4); line-height: 1; }
+  .stamp-num-label { font-size: 14px; color: var(--text-dim); }
+  .progress-bar { width: 100%; max-width: 320px; height: 3px; background: var(--bg3); border-radius: 2px; margin: 1rem 0; }
+  .progress-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.5s ease; box-shadow: 0 0 8px rgba(57,255,110,0.4); }
+  .stamp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 0.5rem 0 1.25rem; max-width: 300px; }
+  .stamp-dot {
+    width: 100%; aspect-ratio: 1; border-radius: 50%; border: 1.5px solid var(--border);
+    background: var(--bg2); display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--text-dim); transition: all 0.3s;
+  }
+  .stamp-dot.filled { background: var(--green-dim); border-color: var(--green); color: var(--green); box-shadow: 0 0 12px rgba(57,255,110,0.25); }
+  .stamp-dot.new-stamp { animation: stampIn 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+  @keyframes stampIn { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.3)} 100%{transform:scale(1);opacity:1} }
+  .stamp-message { text-align: center; padding: 0.9rem 1.25rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); font-size: 13px; color: var(--text-dim); line-height: 1.6; max-width: 320px; }
+  .stamp-message.milestone { border-color: var(--amber); color: var(--amber); background: rgba(255,179,71,0.07); }
+  .stamp-next-hint { margin-top: 0.75rem; font-size: 11px; color: #3d2a66; letter-spacing: 0.05em; }
+
+  /* PRAISE */
+  #praise { align-items: center; justify-content: center; padding: 2rem; text-align: center; }
+  .praise-box { max-width: 420px; width: 100%; }
+  .praise-unlock { font-size: 11px; letter-spacing: 0.2em; color: var(--purple); margin-bottom: 0.5rem; text-transform: uppercase; }
+  .praise-counter { font-size: 5rem; font-weight: 700; color: var(--purple); text-shadow: 0 0 40px rgba(155,109,255,0.4); line-height: 1; margin-bottom: 0.2rem; }
+  .praise-sublabel { font-size: 11px; letter-spacing: 0.2em; color: var(--text-dim); margin-bottom: 2rem; text-transform: uppercase; }
+  .praise-current { font-size: 1.05rem; color: var(--text); line-height: 1.7; margin-bottom: 1.5rem; min-height: 3.5rem; display: flex; align-items: center; justify-content: center; }
+  .praise-text { opacity: 0; transform: translateY(8px); transition: opacity 0.5s, transform 0.5s; }
+  .praise-text.show { opacity: 1; transform: translateY(0); }
+  .next-praise-btn {
+    background: var(--purple-dim); border: 1px solid var(--purple); color: var(--purple);
+    font-family: 'Courier New', monospace; font-size: 13px; padding: 10px 28px;
+    border-radius: 8px; cursor: pointer; letter-spacing: 0.1em; transition: all 0.2s;
+  }
+  .next-praise-btn:hover { background: rgba(155,109,255,0.25); }
+  .praise-history { margin-top: 1.5rem; max-height: 130px; overflow: hidden; position: relative; }
+  .praise-history::after { content:''; position:absolute; bottom:0; left:0; right:0; height:50px; background: linear-gradient(transparent, var(--bg)); }
+  .praise-past-item { font-size: 11px; color: #2a2a40; line-height: 2; }
+  .visit-badge { display: inline-block; font-size: 11px; padding: 4px 12px; border-radius: 20px; margin-bottom: 1rem; letter-spacing: 0.1em; background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(155,109,255,0.3); }
+
+  @media (max-width: 480px) {
+    #home, #stamp, #reject, #hack, #praise { padding: 1.5rem 1rem; }
+    h1 { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<div id="home" class="screen active">
+  <div class="logo">// QR体験ジェネレーター</div>
+  <h1>1つのQRで<br><span>4つの体験</span></h1>
+  <p class="subtitle">友達が読むたびに体験が進化していく。同じQRを貼っておくだけ。</p>
+
+  <div class="flow-diagram">
+    <div class="flow-step s-reject"><div class="num">1回目</div><div class="label">⛔ 拒否</div></div>
+    <div class="flow-arrow">›</div>
+    <div class="flow-step s-hack"><div class="num">2回目</div><div class="label">💻 ハック</div></div>
+    <div class="flow-arrow">›</div>
+    <div class="flow-step s-stamp"><div class="num">3〜4回目</div><div class="label">✓ スタンプ</div></div>
+    <div class="flow-arrow">›</div>
+    <div class="flow-step s-praise"><div class="num">5回目〜</div><div class="label">✨ 褒める</div></div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">// 友達の名前を入力してQRを生成</div>
+    <input type="text" class="name-input" id="name-input" placeholder="例: tanaka" oninput="updateQR()" />
+    <div class="qr-wrap">
+      <div id="qr-canvas-wrap"><div id="qrcode"></div></div>
+      <div id="qr-url">名前を入力するとQRが生成されます</div>
+    </div>
+  </div>
+
+  <div class="note-box">
+    <strong>注意：</strong>訪問回数はそれぞれの友達のスマホに記録されます。<br>
+    同じスマホで読む限りカウントが継続されます。
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loading" class="screen">
+  <div style="text-align:center">
+    <div class="loading-dots">. . .</div>
+    <div class="loading-label">来訪ログを確認しています</div>
+  </div>
+</div>
+
+<!-- REJECT -->
+<div id="reject" class="screen">
+  <div class="reject-box" id="reject-phase1">
+    <span class="reject-icon">⛔</span>
+    <div class="reject-title">アクセス拒否</div>
+    <div class="reject-msg" id="reject-msg">
+      このQRコードはあなたを気に入っていません。<br>出直してください。
+    </div>
+    <button class="retry-btn" onclick="rejectRetry()">もう一度試みる</button>
+  </div>
+  <div class="reject-box" id="reject-phase2" style="display:none">
+    <span class="reject-icon">🤔</span>
+    <div class="accepted-title">…まあ、いいでしょう</div>
+    <div class="reject-msg">
+      認めたわけではありません。<br>ただ今日は、寛大な気分なだけです。<br><br>
+      <span style="color:var(--text-dim);font-size:12px;">ようこそ、我が家へ。<span class="blink">_</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- HACK -->
+<div id="hack" class="screen">
+  <div class="hack-terminal">
+    <div class="hack-titlebar">
+      <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+      <span style="margin-left:8px;">system_alert.sh — bash</span>
+    </div>
+    <div class="hack-body" id="hack-body"></div>
+  </div>
+</div>
+
+<!-- STAMP -->
+<div id="stamp" class="screen">
+  <div class="stamp-header">
+    <div class="stamp-eyebrow">// VISIT LOG</div>
+    <div class="stamp-visitor" id="stamp-visitor"></div>
+    <div class="stamp-num" id="stamp-num">0</div>
+    <div class="stamp-num-label">回目の来訪</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="stamp-progress" style="width:0%"></div></div>
+  <div class="stamp-grid" id="stamp-grid"></div>
+  <div class="stamp-message" id="stamp-msg"></div>
+  <div class="stamp-next-hint" id="stamp-hint"></div>
+</div>
+
+<!-- PRAISE -->
+<div id="praise" class="screen">
+  <div class="praise-box">
+    <div class="praise-unlock">// LEVEL 5 UNLOCKED</div>
+    <div class="visit-badge" id="praise-visit-badge">5回目の来訪</div>
+    <div class="praise-counter" id="praise-count">0</div>
+    <div class="praise-sublabel">件のお褒めの言葉</div>
+    <div class="praise-current"><div class="praise-text" id="praise-text"></div></div>
+    <button class="next-praise-btn" onclick="nextPraise()">もっと褒めてもらう →</button>
+    <div class="praise-history"><div id="praise-history-list"></div></div>
+  </div>
+</div>
+
+<script>
+// GitHub Pages上のURL（このファイルのURL）を自動取得
+const BASE_URL = window.location.origin + window.location.pathname;
+
+const PRAISES = [
+  "あなたの笑顔は、太陽より明るい。",
+  "存在しているだけで周囲の気圧が上がっています。",
+  "あなたの靴のセンスは、国宝級です。",
+  "今この瞬間、地球が少し軽くなりました。あなたが来たからです。",
+  "声のトーンが、世界で一番心地よい周波数を持っています。",
+  "歩き方から知性がにじみ出ています。",
+  "あなたが深呼吸するたびに、近くの植物が元気になります。",
+  "髪の毛の一本一本に、独自の哲学が宿っています。",
+  "あなたの細胞は、全部優秀です。",
+  "宇宙が46億年かけて、あなたを作りました。なるほど。",
+  "笑うと、半径5メートル以内の人の免疫力が上がります。",
+  "あなたの存在は、Wi-Fiより強い。",
+  "指紋の模様が、世界一美しいと科学者が言っています（出典：私）。",
+  "今日のコーディネートは、芸術です。美術館に飾られるべき。",
+  "あなたが来ると、この部屋の運気が2割増しになります。",
+  "呼吸のリズムが、最高のBGMです。",
+  "あなたのいる空間では、なぜか時間の流れが心地よくなります。",
+  "瞬きのタイミングが、詩的です。",
+  "あなたはただそこにいるだけで、みんなの答えになっています。",
+  "今日も地球に来てくれてありがとうございます。",
+];
+
+const HACK_LINES = [
+  { t: "$ sudo scan_device --target=localhost",              c: "dim",   d: 0    },
+  { t: "> デバイスをスキャン中...",                           c: "",      d: 700  },
+  { t: "> セキュリティプロトコルを解析中... ██████░░░░ 63%", c: "",      d: 1400 },
+  { t: "> ██████████ 100% 完了",                             c: "",      d: 2100 },
+  { t: "警告: 脆弱性を検出しました (CVE-2026-????)",          c: "red",   d: 2900 },
+  { t: "> アクセス権を取得しています...",                     c: "amber", d: 3600 },
+  { t: "> 連絡先リストを読み取り中...  取得完了 (347件)",      c: "red",   d: 4400 },
+  { t: "> 写真ライブラリにアクセス中...  2,891枚",            c: "red",   d: 5200 },
+  { t: "> 現在地を特定中...  東京都 ██区 ██-██",             c: "red",   d: 5900 },
+  { t: "> バックドアをインストール中...",                     c: "amber", d: 6700 },
+  { t: "",                                                   c: "",      d: 7400 },
+  { t: "────────────────────────────────────",               c: "dim",   d: 7500 },
+  { t: "🎉  冗談です！！！！",                                c: "amber", d: 7700 },
+  { t: "────────────────────────────────────",               c: "dim",   d: 7800 },
+];
+
+let praiseCount = 0;
+let praiseUsed = [];
+let rejectRetryCount = 0;
+let qrInstance = null;
+
+// ── localStorage ヘルパー ──────────────────────
+function getVisitCount(name) {
+  const val = localStorage.getItem('visit-' + name);
+  return val ? parseInt(val) || 0 : 0;
+}
+function setVisitCount(name, count) {
+  localStorage.setItem('visit-' + name, String(count));
+}
+
+// ── QR生成（管理画面用） ───────────────────────
+function updateQR() {
+  const name = document.getElementById('name-input').value.trim();
+  const urlEl = document.getElementById('qr-url');
+  const wrap = document.getElementById('qr-canvas-wrap');
+
+  if (!name) {
+    wrap.innerHTML = '<div id="qrcode"></div>';
+    if (qrInstance) { try { qrInstance.clear(); qrInstance = null; } catch(e){} }
+    urlEl.textContent = '名前を入力するとQRが生成されます';
+    return;
+  }
+
+  const url = BASE_URL + '?visit=' + encodeURIComponent(name);
+  urlEl.textContent = url;
+  wrap.innerHTML = '<div id="qrcode"></div>';
+  if (qrInstance) { try { qrInstance.clear(); } catch(e){} }
+  qrInstance = new QRCode(document.getElementById('qrcode'), {
+    text: url,
+    width: 180,
+    height: 180,
+    colorDark: '#000000',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+}
+
+// ── 画面切替 ───────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── REJECT ────────────────────────────────────
+function rejectRetry() {
+  rejectRetryCount++;
+  if (rejectRetryCount === 1) {
+    document.getElementById('reject-msg').innerHTML =
+      '…まだ納得できません。<br>本当に来る必要がありましたか？';
+  } else {
+    document.getElementById('reject-msg').innerHTML = 'ふむ。熱意は……認めましょう。';
+    setTimeout(() => {
+      document.getElementById('reject-phase1').style.display = 'none';
+      document.getElementById('reject-phase2').style.display = 'block';
+    }, 900);
+  }
+}
+
+// ── HACK ──────────────────────────────────────
+function runHack() {
+  const body = document.getElementById('hack-body');
+  body.innerHTML = '';
+  HACK_LINES.forEach((line, i) => {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'hack-line show ' + line.c;
+      el.textContent = line.t;
+      body.appendChild(el);
+      body.scrollTop = body.scrollHeight;
+      if (i === HACK_LINES.length - 1) {
+        setTimeout(() => {
+          const rev = document.createElement('div');
+          rev.className = 'hack-reveal show';
+          rev.innerHTML = '<p>何も取られていません。安全です。<br><strong>ようこそ！冷蔵庫は自由に使ってください。</strong></p>';
+          body.appendChild(rev);
+          body.scrollTop = body.scrollHeight;
+        }, 900);
+      }
+    }, line.d);
+  });
+}
+
+// ── STAMP ─────────────────────────────────────
+function renderStamp(name, count) {
+  document.getElementById('stamp-visitor').textContent = '// ' + name + ' さんのログ';
+  document.getElementById('stamp-num').textContent = count;
+
+  const grid = document.getElementById('stamp-grid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'stamp-dot' + (i <= count ? ' filled' : '');
+    if (i === count) dot.classList.add('new-stamp');
+    dot.textContent = i <= count ? '✓' : String(i);
+    grid.appendChild(dot);
+  }
+
+  document.getElementById('stamp-progress').style.width = (Math.min(count, 5) / 5 * 100) + '%';
+
+  const msgEl = document.getElementById('stamp-msg');
+  const msgs = { 3: 'また来てくれました！スタンプが増えています。', 4: '4回目！あと1回で新しいフェーズが解放されます……' };
+  msgEl.textContent = msgs[count] || (count + '回目の来訪。');
+  msgEl.className = 'stamp-message';
+  document.getElementById('stamp-hint').textContent = '5回目で新しい体験が解放されます';
+}
+
+// ── PRAISE ────────────────────────────────────
+function nextPraise() {
+  let available = PRAISES.map((_,i)=>i).filter(i => !praiseUsed.includes(i));
+  if (available.length === 0) { praiseUsed = []; available = PRAISES.map((_,i)=>i); }
+  const idx = available[Math.floor(Math.random() * available.length)];
+  praiseUsed.push(idx);
+  praiseCount++;
+  document.getElementById('praise-count').textContent = praiseCount;
+
+  const el = document.getElementById('praise-text');
+  el.classList.remove('show');
+  setTimeout(() => { el.textContent = PRAISES[idx]; el.classList.add('show'); }, 200);
+
+  const hist = document.getElementById('praise-history-list');
+  const item = document.createElement('div');
+  item.className = 'praise-past-item';
+  item.textContent = '> ' + PRAISES[idx];
+  hist.insertBefore(item, hist.firstChild);
+}
+
+// ── ルーター ───────────────────────────────────
+function route() {
+  const params = new URLSearchParams(window.location.search);
+  const name = params.get('visit');
+  if (!name) return; // 管理画面
+
+  showScreen('loading');
+
+  // カウントをインクリメント
+  const count = getVisitCount(name) + 1;
+  setVisitCount(name, count);
+
+  // 少し待ってから画面を出す（演出）
+  setTimeout(() => {
+    if (count === 1) {
+      showScreen('reject');
+    } else if (count === 2) {
+      showScreen('hack');
+      setTimeout(runHack, 400);
+    } else if (count <= 4) {
+      showScreen('stamp');
+      renderStamp(name, count);
+    } else {
+      document.getElementById('praise-visit-badge').textContent = count + '回目の来訪';
+      showScreen('praise');
+      setTimeout(nextPraise, 400);
+    }
+  }, 900);
+}
+
+route();
+updateQR();
+</script>
+</body>
+</html>
